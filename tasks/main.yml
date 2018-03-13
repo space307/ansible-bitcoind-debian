@@ -1,0 +1,72 @@
+---
+
+- debug:
+    msg: "data directory is {{ bitcoind_datadir }}"
+
+- name: Add bitcoind group
+  group: 
+    name: bitcoind 
+    state: present
+
+- name: Add bitcoind user
+  user:
+    name: bitcoind
+    group: bitcoind
+    createhome: yes
+    system: yes
+    state: present
+
+- name: Ensure installed bitcoind and supervisor
+  apt:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - supervisor
+
+- name: Ensure bitcoind_datadir and log dir exists
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: bitcoind
+    group: bitcoind
+    mode: 0775
+  with_items:
+    - "{{ bitcoind_datadir }}"
+    - /var/log/bitcoind
+
+- name: Fetch source code
+  unarchive:
+    src: https://bitcoin.org/bin/bitcoin-core-{{ bitcoin_version }}/bitcoin-{{ bitcoin_version }}-x86_64-linux-gnu.tar.gz
+    dest: /tmp
+    remote_src: True
+
+- name: Install
+  shell: "cd /tmp && install -m 0755 -o root -g root -t /usr/bin bitcoin-{{ bitcoin_version }}/bin/*"
+  become: yes
+
+- name: Copy supervisor configuration
+  template:
+    src: supervisor-bitcoind.conf.j2
+    dest: /etc/supervisor/conf.d/bitcoind.conf
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Configure bitcoind
+  template:
+    src: bitcoin.conf.j2
+    dest: "{{ bitcoind_datadir }}/bitcoin.conf"
+    owner: bitcoind
+    group: bitcoind
+    mode: 0600
+
+- name: Ensure supervisor is enabled and started
+  service:
+    name: supervisor
+    state: started
+    enabled: yes
+
+- name: Supervisor reread bitcoind
+  supervisorctl:
+    name: bitcoind
+    state: present
